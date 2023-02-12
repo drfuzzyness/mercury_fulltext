@@ -6,7 +6,7 @@ class mercury_fulltext extends Plugin
     public function about()
     {
         return array(
-            2.0,
+            2.1,
             "Try to get fulltext of the article using Self-hosted Mercury Parser API",
             "https://github.com/HenryQW/mercury_fulltext/"
         );
@@ -41,6 +41,7 @@ class mercury_fulltext extends Plugin
         $host->add_hook($host::HOOK_ARTICLE_BUTTON, $this);
         
         $host->add_filter_action($this, "mercury_fulltext", __("Mercury Fulltext"));
+        $host->add_filter_action($this, "mercury_fulltext_append", __("Mercury Fulltext Append"));
     }
 
     public function get_js()
@@ -140,13 +141,22 @@ class mercury_fulltext extends Plugin
         if (!is_array($enabled_feeds)) {
             $enabled_feeds = array();
         }
+        $append_feeds = $this
+            ->host
+            ->get($this, "append_feeds");
+        if (!is_array($append_feeds)) {
+            $append_feeds = array();
+        }
         
         $key = array_search($feed_id, $enabled_feeds);
         $checked = $key !== false ? "checked" : "";
+        $append_key = array_search($feed_id, $append_feeds);
+        $append_checked = $append_key !== false ? "checked" : "";
 
         print "<fieldset>";
         
         print "<label class='checkbox'><input dojoType='dijit.form.CheckBox' type='checkbox' id='mercury_fulltext_enabled' name='mercury_fulltext_enabled' $checked>&nbsp;" . __('Get fulltext via Mercury Parser') . "</label>";
+        print "<label class='checkbox'><input dojoType='dijit.form.CheckBox' type='checkbox' id='mercury_fulltext_append' name='mercury_fulltext_append' $append_checked>&nbsp;" . __('Append to summary, instead of replacing it') . "</label>";
 
         print "</fieldset>";
 
@@ -162,10 +172,18 @@ class mercury_fulltext extends Plugin
         if (!is_array($enabled_feeds)) {
             $enabled_feeds = array();
         }
+        $append_feeds = $this
+            ->host
+            ->get($this, "append_feeds");
+        if (!is_array($append_feeds)) {
+            $append_feeds = array();
+        }
         
         $enable = checkbox_to_sql_bool($_POST["mercury_fulltext_enabled"]);
+        $append = checkbox_to_sql_bool($_POST["mercury_fulltext_append"]);
         
         $key = array_search($feed_id, $enabled_feeds);
+        $append_key = array_search($feed_id, $append_feeds);
         
         if ($enable) {
             if ($key === false) {
@@ -176,10 +194,22 @@ class mercury_fulltext extends Plugin
                 unset($enabled_feeds[$key]);
             }
         }
+        if ($append) {
+            if ($append_key === false) {
+                array_push($append_feeds, $feed_id);
+            }
+        } else {
+            if ($append_key !== false) {
+                unset($append_feeds[$append_key]);
+            }
+        }
 
         $this
             ->host
             ->set($this, "enabled_feeds", $enabled_feeds);
+        $this
+            ->host
+            ->set($this, "append_feeds", $append_feeds);
     }
 
     /**
@@ -210,12 +240,15 @@ class mercury_fulltext extends Plugin
         return $output;
     }
     
-    public function process_article($article)
+    public function process_article(array $article, bool $append_mode = false)
     {
         $output  = $this->send_request($article["link"]);
 
         if (property_exists($output, 'content') && $output->content) {
-            $article["content"] = $output->content;
+            if($append_mode)
+                $article["content"] .= "<hr/>" . $output->content;
+            else
+                $article["content"] = $output->content;
         }
 
         return $article;
@@ -226,18 +259,26 @@ class mercury_fulltext extends Plugin
         $enabled_feeds = $this
             ->host
             ->get($this, "enabled_feeds");
-            
+
         if (!is_array($enabled_feeds)) {
             return $article;
         }
         
-        $key = array_search($article["feed"]["id"], $enabled_feeds);
+        $feed_id = $article["feed"]["id"];
+        $key = array_search($feed_id, $enabled_feeds);
         
         if ($key === false) {
             return $article;
         }
-        
-        return $this->process_article($article);
+
+        $append_feeds = $this
+            ->host
+            ->get($this, "append_feeds");
+        if (!is_array($enabled_feeds)) {
+            $append_feeds = array();
+        }
+
+        return $this->process_article($article, in_array($feed_id, $append_feeds));
     }
 
     public function api_version()
