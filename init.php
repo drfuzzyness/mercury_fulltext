@@ -274,7 +274,7 @@ class mercury_fulltext extends Plugin
         $append_feeds = $this
             ->host
             ->get($this, "append_feeds");
-        if (!is_array($enabled_feeds)) {
+        if (!is_array($append_feeds)) {
             $append_feeds = array();
         }
 
